@@ -4,6 +4,8 @@ import { User } from "../../models/user.model.js";
 import ApiError from "../../lib/apiError.js";
 import { generateHash } from "../../lib/hash.js";
 import { generateJwtToken } from "../../lib/generateJwtToken.js";
+import { publishEmail } from "../../queues/email.producer.js";
+import verifyEmailTemplate from "../../templates/verify.email.js";
 
 
 export async function signUpController(req:Request, res: Response){
@@ -30,6 +32,25 @@ export async function signUpController(req:Request, res: Response){
 
        const accessToken = generateJwtToken({id : newlyCreatedUser._id}, process.env.JWT_ACCESS_TOKEN_SECRET!, "15m")
 
+       const verificationToken = generateJwtToken({id : newlyCreatedUser._id}, process.env.JWT_VERIFICATION_TOKEN_SECRET!, "1d" )
+
+       const tokenHash = await generateHash(verificationToken, 10)
+       
+       newlyCreatedUser.emailVerificationToken = tokenHash
+       newlyCreatedUser.emailVerificationTokenExpires = new Date( Date.now() + 24 * 60 * 60 * 1000)
+
+       await newlyCreatedUser.save()
+
+       const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`
+       const channel = req.app.locals.rabbitmqChannel
+
+       await publishEmail(channel, {
+         to : newlyCreatedUser.email,
+         subject : "Verify email",
+         text: `Verify your email using this link: ${verificationUrl}`,
+         html : verifyEmailTemplate(verificationUrl)
+       } )
+
        res.cookie("access_token", accessToken, {
         httpOnly : true,
         secure : true,
@@ -50,7 +71,6 @@ export async function signUpController(req:Request, res: Response){
           isEmailVerified : newlyCreatedUser.isEmailVerified,
           istowFactorEnambled : newlyCreatedUser.istowFactorEnambled,
           createdAt : newlyCreatedUser.createdAt, 
-          accessToken 
         }
        })
 }

@@ -3,6 +3,7 @@ import connectDB from "./config/db.js"
 import http from "http"
 import app from "./app.js"
 import dns from "node:dns"
+import connectRabbitMQ from "./config/rabbitmq.js"
 
 dns.setServers(["1.1.1.1", "8.8.8.8"])
 
@@ -13,11 +14,17 @@ const PORT = process.env.PORT || 5000
 async function startServer() {
       await connectDB()
 
-      const server = http.createServer(app)
+      const {channel} =  await connectRabbitMQ()
 
+      app.locals.rabbitmqChannel = channel
+      
+      const server = http.createServer(app)
+  
       server.listen(PORT, ()=>{
         console.log("Server is now listning to port", PORT)
       })
+
+     
 }
 
 
